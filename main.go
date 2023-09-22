@@ -37,6 +37,7 @@ func main() {
 	addr := flag.String("addr", "0.0.0.0", "Address of Network Inteface to be used")
 	port := flag.Uint("p", 3000, "Port to be used to run the node")
 	discoveryTag := flag.String("t", "mdns-discovery-tag", "Discovery tag")
+
 	flag.Parse()
 	//
 	cfg := p2p.NetworkConfig{
