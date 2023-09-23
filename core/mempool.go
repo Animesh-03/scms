@@ -5,7 +5,14 @@ import (
 )
 
 type MemPool struct {
-	Pool map[string]*Transaction
+	Pool map[string]*Transaction `json:"pool"`
+}
+
+func NewMemPool() *MemPool {
+	mp := &MemPool{
+		Pool: make(map[string]*Transaction),
+	}
+	return mp
 }
 
 func (mp *MemPool) AddToPool(tx *Transaction) {

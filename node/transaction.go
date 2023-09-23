@@ -34,7 +34,8 @@ func (n *Node) GetStatusOfProduct(productId string) (core.TransactionStatus, err
 	return core.TransactionStatus(status), nil
 }
 
-func (n *Node) MakeTransaction(receiver, productId string) error {
+// Broadcast a transaction with status based on the type of node
+func (n *Node) MakeTransaction(receiver, productId string) (*core.Transaction, error) {
 	var transaction *core.Transaction
 	switch n.Type {
 	case Manufacturer:
@@ -47,34 +48,36 @@ func (n *Node) MakeTransaction(receiver, productId string) error {
 			transaction = core.NewTransaction(n.Network.GetHost().ID().String(), receiver, productId, core.Dispatched)
 			n.CurrentProduct = productId
 		} else {
-			return fmt.Errorf("previous product %s still in progress", n.CurrentProduct)
+			return nil, fmt.Errorf("previous product %s still in progress", n.CurrentProduct)
 		}
 
 	case Consumer:
 		transaction = core.NewTransaction(n.Network.GetHost().ID().String(), receiver, productId, core.Received)
 	}
 
-	transactionBytes, err := json.Marshal(*transaction)
+	transactionBytes, err := json.Marshal(transaction)
 	if err != nil {
 		logger.LogError("error marshalling transaction: %s", err.Error())
-		return err
+		return nil, err
 	}
 
 	n.Network.Broadcast("transaction", transactionBytes)
 
-	return nil
+	return transaction, nil
 }
 
-func TransactionHandler(sub *pubsub.Subscription, self peer.ID) {
+func TransactionHandler(sub *pubsub.Subscription, self peer.ID, node *Node) {
 	for {
 		msg, err := sub.Next(context.Background())
 		if err != nil {
 			logger.LogError("Error reading from %s\n", sub.Topic())
 			return
 		}
+		logger.LogInfo("Received Transaction from %s:\n%s\n", msg.ReceivedFrom.String(), msg.GetData())
 
 		var transaction core.Transaction
 		json.Unmarshal(msg.Data, &transaction)
-		logger.LogInfo("Received Transaction from %s:\n%+v\n", msg.ReceivedFrom.String(), transaction)
+
+		node.MemPool.AddToPool(&transaction)
 	}
 }
