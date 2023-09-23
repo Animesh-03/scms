@@ -70,6 +70,7 @@ func (n *MDNSNetwork) Init(config NetworkConfig) {
 	n.peers = make(map[peer.ID]*peer.AddrInfo)
 
 	logger.LogInfo("Started node on %s\n", n.h.Addrs())
+	logger.LogInfo("Self ID: %s\n", n.h.ID().String())
 
 	ps, err := pubsub.NewGossipSub(context.Background(), n.h)
 	if err != nil {

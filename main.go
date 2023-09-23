@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/Animesh-03/scms/logger"
+	"github.com/Animesh-03/scms/node"
 	"github.com/Animesh-03/scms/p2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -37,25 +35,19 @@ func main() {
 	addr := flag.String("addr", "0.0.0.0", "Address of Network Inteface to be used")
 	port := flag.Uint("p", 3000, "Port to be used to run the node")
 	discoveryTag := flag.String("t", "mdns-discovery-tag", "Discovery tag")
+	nodeType := flag.Uint("n", 3, "Enter the following: Manufacturer - 1, Distribtor - 2, Consumer - 3\n Default is Consumer")
 
 	flag.Parse()
-	//
+
+	//Create the config Object
 	cfg := p2p.NetworkConfig{
 		ListenAddr:          *addr,
 		ListenPort:          uint16(*port),
 		DiscoveryServiceTag: *discoveryTag,
 	}
 
-	// Initialize the network
-	net := p2p.MDNSNetwork{}
-	net.Init(cfg)
-	defer net.GetHost().Close()
-
-	net.ListenBroadcast("test", testHandler)
-
-	// Wait until terminated
-	termCh := make(chan os.Signal, 1)
-	signal.Notify(termCh, os.Interrupt, syscall.SIGTERM)
-	<-termCh
-	logger.LogInfo("Shutting Down Node...\n")
+	node := &node.Node{
+		Type: node.NodeType(*nodeType),
+	}
+	node.Start(&cfg)
 }
