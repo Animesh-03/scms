@@ -1,18 +1,13 @@
 package node
 
 import (
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	crand "crypto/rand"
+	"math/rand"
 
 	"github.com/Animesh-03/scms/core"
 	"github.com/Animesh-03/scms/logger"
-	"github.com/Animesh-03/scms/p2p"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/libp2p/go-libp2p/core/peer"
-
-	"github.com/gin-gonic/gin"
 )
 
 type NodeType uint
@@ -24,59 +19,77 @@ const (
 )
 
 type Node struct {
-	Type    NodeType
-	Network *p2p.MDNSNetwork
+	Type NodeType
+	// Network *p2p.MDNSNetwork
+
+	ID string
 
 	Blockchain     []core.Block
 	MemPool        *core.MemPool
 	CurrentProduct string
+	Stake          uint
+
+	PrivKey *ecdsa.PrivateKey
+	PubKey  *ecdsa.PublicKey
 }
 
-// Initialize the node by joining the network
-func (node *Node) Start(config *p2p.NetworkConfig) {
-	// Initialize Node
+func NewNode(id string, t NodeType, pubKeyMap map[string]ecdsa.PublicKey, nodeMap map[string]*Node) *Node {
+	node := Node{}
+
+	node.ID = id
+	node.Blockchain = make([]core.Block, 0)
+	node.Blockchain = append(node.Blockchain, *core.CreateGenesisBlock())
+	node.MemPool = core.NewMemPool()
 	node.CurrentProduct = ""
 
-	// Initialize the network
-	net := p2p.MDNSNetwork{}
-	net.Init(*config)
-	defer net.GetHost().Close()
-
-	node.Network = &net
-	node.MemPool = core.NewMemPool()
-	node.Blockchain = make([]core.Block, 0)
-
-	node.SetupListeners()
-	node.SetupRPCs(uint(config.ListenPort + 1000))
-
-	// Wait until terminated
-	termCh := make(chan os.Signal, 1)
-	signal.Notify(termCh, os.Interrupt, syscall.SIGTERM)
-	<-termCh
-	logger.LogInfo("Shutting Down Node...\n")
-}
-
-// Setup the listeners based on the type of node
-func (node *Node) SetupListeners() {
-	// Role Specific Listeners
-	switch node.Type {
-	case Manufacturer:
-
-	case Distribtor:
-
-	case Consumer:
-
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), crand.Reader)
+	if err != nil {
+		logger.LogError("Error initializing node: %s\n", err.Error())
+		return nil
 	}
-	// General Listeners
-	node.Network.ListenBroadcast("transaction", func(sub *pubsub.Subscription, self peer.ID) { TransactionHandler(sub, self, node) })
+	node.PrivKey = privKey
+	node.PubKey = &privKey.PublicKey
 
+	pubKeyMap[id] = *node.PubKey
+	nodeMap[id] = &node
+
+	return &node
 }
 
-func (node *Node) SetupRPCs(port uint) {
-	router := gin.Default()
+func (node *Node) RegisterStake(stakes map[string]uint, stake uint) {
+	stakes[node.ID] = stake
+	node.Stake = stake
+}
 
-	router.POST("/transaction", func(ctx *gin.Context) { SendTransaction(ctx, node) })
-	router.GET("/info", func(ctx *gin.Context) { GetNodeInfo(ctx, node) })
+func (node *Node) AddRandomVote(stakes map[string]uint, votes map[string]uint) {
+	keys := make([]string, 0, len(stakes))
+	for k := range stakes {
+		keys = append(keys, k)
+	}
 
-	router.Run(fmt.Sprintf("0.0.0.0:%d", port))
+	votes[keys[rand.Int()%len(keys)]] += node.Stake
+}
+
+func (node *Node) SignTransaction(tx *core.Transaction) {
+	signature, err := ecdsa.SignASN1(crand.Reader, node.PrivKey, tx.Bytes())
+	if err != nil {
+		logger.LogError("Error signing tx: %s\n", err.Error())
+		return
+	}
+
+	tx.Signature = signature
+}
+
+func (node *Node) CreateBlock() *core.Block {
+	block := core.NewBlock(node.MemPool.GetTransactions(5), node.Blockchain[len(node.Blockchain)-1].Hash, node.Blockchain[len(node.Blockchain)-1].Height+1)
+	return block
+}
+
+func (node *Node) VerifyBlock(block *core.Block, pubKeyMap map[string]ecdsa.PublicKey) bool {
+	return block.Verify(&node.Blockchain[len(node.Blockchain)-1], pubKeyMap)
+}
+
+func (node *Node) AddBlockToChain(block *core.Block) {
+	node.Blockchain = append(node.Blockchain, *block)
+	node.MemPool.RemoveAll(block.Transactions)
 }

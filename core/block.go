@@ -2,24 +2,26 @@ package core
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"time"
 
 	"github.com/Animesh-03/scms/logger"
 )
 
 type Block struct {
-	Height            uint          `json:"height"`
-	Hash              []byte        `json:"hash"`
-	Timestamp         int64         `json:"timestamp"`
-	MerkleRoot        []byte        `json:"merkleroot"`
-	PreviousBlockHash []byte        `json:"previousblockhash"`
-	Transactions      []Transaction `json:"transactions"`
+	Height            uint           `json:"height"`
+	Hash              []byte         `json:"hash"`
+	Timestamp         int64          `json:"timestamp"`
+	MerkleRoot        []byte         `json:"merkleroot"`
+	PreviousBlockHash []byte         `json:"previousblockhash"`
+	Transactions      []*Transaction `json:"transactions"`
 }
 
 // Creates a new block with given transactions and height
-func NewBlock(txs []Transaction, previousBlockHash []byte, height uint) *Block {
+func NewBlock(txs []*Transaction, previousBlockHash []byte, height uint) *Block {
 	block := &Block{
 		Height:            uint(height),
 		Timestamp:         time.Now().UnixMilli(),
@@ -38,15 +40,21 @@ func NewBlock(txs []Transaction, previousBlockHash []byte, height uint) *Block {
 	return block
 }
 
+func (block *Block) Stringify() string {
+	jsonString, _ := json.Marshal(block)
+
+	return string(jsonString)
+}
+
 // Generates the genesis block with hardcoded hashes
 func CreateGenesisBlock() *Block {
 	block := &Block{
 		Height:            1,
-		Timestamp:         time.Now().UnixMilli(),
+		Timestamp:         0,
 		MerkleRoot:        []byte("0"),
 		PreviousBlockHash: []byte("0"),
 		Hash:              []byte("0"),
-		Transactions:      []Transaction{},
+		Transactions:      []*Transaction{},
 	}
 	block.Hash = block.ComputeHash()
 
@@ -66,15 +74,16 @@ func (b *Block) ComputeHash() []byte {
 	return hash[:]
 }
 
-func (b *Block) Verify(prevBlock *Block) bool {
+func (b *Block) Verify(prevBlock *Block, pubKeyMap map[string]ecdsa.PublicKey) bool {
 	// Check if block hash or height are invalid
 	if !bytes.Equal(b.PreviousBlockHash, prevBlock.Hash) || b.Height != prevBlock.Height+1 {
+		logger.LogWarn("Prev hash or height is invalid\n")
 		return false
 	}
 
 	// Verify all the transactions in the block
 	for _, tx := range b.Transactions {
-		if !tx.Verify() {
+		if !tx.Verify(pubKeyMap[tx.Sender]) {
 			return false
 		}
 	}
