@@ -91,7 +91,8 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 		node.VoteRandomNode()
 	}()
 
-	// Compute the final
+	// Compute the final votes
+	// If this node is part of the verifers then register a listener for block verification
 	go func() {
 		time.Sleep(20 * time.Second)
 		node.Dpos.ComputeVerfiers(2)
