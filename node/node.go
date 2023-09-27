@@ -1,8 +1,12 @@
 package node
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,12 +30,19 @@ const (
 )
 
 type Node struct {
+	ID      string
 	Type    NodeType
 	Network *p2p.MDNSNetwork
 
 	Blockchain     []core.Block
 	MemPool        *core.MemPool
 	CurrentProduct string
+	PubKeyMap      map[string]ecdsa.PublicKey
+	PeerMap        map[string]peer.ID
+	IDMap          map[peer.ID]string
+
+	PrivKey *ecdsa.PrivateKey
+	PubKey  *ecdsa.PublicKey
 
 	Dpos DposClient
 }
@@ -46,20 +57,46 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 	net.Init(*config)
 	defer net.GetHost().Close()
 
+	node.ID = fmt.Sprintf("%d", config.ListenPort)
 	node.Network = &net
 	node.MemPool = core.NewMemPool()
 	node.Blockchain = make([]core.Block, 0)
-	node.Dpos = DposClient{
-		Stakes: make(map[string]uint),
+	node.Dpos = NewDposClient()
+
+	node.PubKeyMap = make(map[string]ecdsa.PublicKey)
+	node.PeerMap = make(map[string]peer.ID)
+	node.IDMap = make(map[peer.ID]string)
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), crand.Reader)
+	if err != nil {
+		logger.LogError("Error initializing node: %s\n", err.Error())
+		return
 	}
+	node.PrivKey = privKey
+	node.PubKey = &privKey.PublicKey
 
 	node.SetupListeners()
 	go node.SetupRPCs(uint(config.ListenPort + 1000))
 
 	// Register the node after a delay
+	// Stake a random amount of tokens < 30
 	go func() {
 		time.Sleep(10 * time.Second)
-		node.Register(25)
+		node.Register(uint(rand.Int()) % 30)
+	}()
+
+	// Vote for a random node after a delay
+	go func() {
+		time.Sleep(15 * time.Second)
+		node.VoteRandomNode()
+	}()
+
+	// Compute the final
+	go func() {
+		time.Sleep(20 * time.Second)
+		node.Dpos.ComputeVerfiers(2)
+		logger.LogInfo("Final Votes are: %+v\n", node.Dpos.Votes)
+		logger.LogInfo("Verifiers are: %+v\n", node.Dpos.Verifiers)
 	}()
 
 	// Wait until terminated
@@ -83,6 +120,7 @@ func (node *Node) SetupListeners() {
 	// General Listeners
 	node.Network.ListenBroadcast("transaction", func(sub *pubsub.Subscription, self peer.ID) { TransactionHandler(sub, self, node) })
 	node.Network.ListenBroadcast("register", func(sub *pubsub.Subscription, self peer.ID) { RegistrationHandler(sub, self, node) })
+	node.Network.ListenBroadcast("vote", func(sub *pubsub.Subscription, self peer.ID) { VotingHandler(sub, self, node) })
 
 	logger.LogInfo("Listeners Setup Successfully\n")
 }
@@ -98,11 +136,36 @@ func (node *Node) SetupRPCs(port uint) {
 	router.Run(fmt.Sprintf("0.0.0.0:%d", port))
 }
 
+// Sign A Transaction
+func (node *Node) SignTransaction(tx *core.Transaction) {
+	signature, err := ecdsa.SignASN1(crand.Reader, node.PrivKey, tx.Bytes())
+	if err != nil {
+		logger.LogError("Error signing tx: %s\n", err.Error())
+		return
+	}
+
+	tx.Signature = signature
+}
+
+func (node *Node) CreateBlock() *core.Block {
+	block := core.NewBlock(node.MemPool.GetTransactions(5), node.Blockchain[len(node.Blockchain)-1].Hash, node.Blockchain[len(node.Blockchain)-1].Height+1)
+	return block
+}
+
+func (node *Node) VerifyBlock(block *core.Block) bool {
+	return block.Verify(&node.Blockchain[len(node.Blockchain)-1], node.PubKeyMap)
+}
+
+func (node *Node) AddBlockToBlockChain(block *core.Block) {
+	node.Blockchain = append(node.Blockchain, *block)
+	node.MemPool.RemoveAll(block.Transactions)
+}
+
 // Broadcast the stake to register
 func (node *Node) Register(stakeAmount uint) {
 	logger.LogInfo("Registering self with amount: %d\n", stakeAmount)
-	stake := StakeData{
-		PeerId: node.Network.GetHost().ID().String(),
+	stake := RegistrationData{
+		PeerId: node.ID,
 		Amount: stakeAmount,
 	}
 	stakeBytes, err := json.Marshal(stake)
@@ -112,4 +175,14 @@ func (node *Node) Register(stakeAmount uint) {
 	}
 
 	node.Network.Broadcast("register", stakeBytes)
+}
+
+func (node *Node) VoteRandomNode() {
+	keys := make([]string, 0, len(node.PubKeyMap))
+	for k := range node.PubKeyMap {
+		keys = append(keys, k)
+	}
+
+	voteNode := keys[rand.Int()%len(node.PeerMap)]
+	node.Network.Broadcast("vote", []byte(voteNode))
 }
