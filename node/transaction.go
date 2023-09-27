@@ -78,6 +78,10 @@ func TransactionHandler(sub *pubsub.Subscription, self peer.ID, node *Node) {
 		var transaction core.Transaction
 		json.Unmarshal(msg.Data, &transaction)
 
-		node.MemPool.AddToPool(&transaction)
+		if transaction.Verify() {
+			node.MemPool.AddToPool(&transaction)
+		} else {
+			logger.LogWarn("Transaction Id: %s Invalid", transaction.ID)
+		}
 	}
 }

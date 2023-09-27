@@ -1,10 +1,12 @@
 package node
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/Animesh-03/scms/core"
 	"github.com/Animesh-03/scms/logger"
@@ -30,6 +32,8 @@ type Node struct {
 	Blockchain     []core.Block
 	MemPool        *core.MemPool
 	CurrentProduct string
+
+	Dpos DposClient
 }
 
 // Initialize the node by joining the network
@@ -45,9 +49,18 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 	node.Network = &net
 	node.MemPool = core.NewMemPool()
 	node.Blockchain = make([]core.Block, 0)
+	node.Dpos = DposClient{
+		Stakes: make(map[string]uint),
+	}
 
 	node.SetupListeners()
-	node.SetupRPCs(uint(config.ListenPort + 1000))
+	go node.SetupRPCs(uint(config.ListenPort + 1000))
+
+	// Register the node after a delay
+	go func() {
+		time.Sleep(10 * time.Second)
+		node.Register(25)
+	}()
 
 	// Wait until terminated
 	termCh := make(chan os.Signal, 1)
@@ -69,14 +82,34 @@ func (node *Node) SetupListeners() {
 	}
 	// General Listeners
 	node.Network.ListenBroadcast("transaction", func(sub *pubsub.Subscription, self peer.ID) { TransactionHandler(sub, self, node) })
+	node.Network.ListenBroadcast("register", func(sub *pubsub.Subscription, self peer.ID) { RegistrationHandler(sub, self, node) })
 
+	logger.LogInfo("Listeners Setup Successfully\n")
 }
 
 func (node *Node) SetupRPCs(port uint) {
 	router := gin.Default()
+	router.LoadHTMLGlob("templates/*")
 
 	router.POST("/transaction", func(ctx *gin.Context) { SendTransaction(ctx, node) })
 	router.GET("/info", func(ctx *gin.Context) { GetNodeInfo(ctx, node) })
+	router.GET("/product_status", func(ctx *gin.Context) { GetProductStatus(ctx, node) })
 
 	router.Run(fmt.Sprintf("0.0.0.0:%d", port))
+}
+
+// Broadcast the stake to register
+func (node *Node) Register(stakeAmount uint) {
+	logger.LogInfo("Registering self with amount: %d\n", stakeAmount)
+	stake := StakeData{
+		PeerId: node.Network.GetHost().ID().String(),
+		Amount: stakeAmount,
+	}
+	stakeBytes, err := json.Marshal(stake)
+	if err != nil {
+		logger.LogError("error marshalling stake\n")
+		return
+	}
+
+	node.Network.Broadcast("register", stakeBytes)
 }
