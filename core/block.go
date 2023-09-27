@@ -41,9 +41,9 @@ func NewBlock(txs []*Transaction, previousBlockHash []byte, height uint) *Block 
 }
 
 func (block *Block) Stringify() string {
-	jsonString, _ := json.Marshal(block)
+	blockJson, _ := json.MarshalIndent(block, "", "	")
 
-	return string(jsonString)
+	return string(blockJson) + "\n"
 }
 
 // Generates the genesis block with hardcoded hashes

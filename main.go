@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"math/rand"
 	"sort"
 
 	"github.com/Animesh-03/scms/core"
@@ -17,37 +18,33 @@ func main() {
 
 	// Initialize nodes
 	manufacturer := node.NewNode("m1", 1, pubKeyMap, nodeMap)
-	distributor1 := node.NewNode("d1", 2, pubKeyMap, nodeMap)
-	distributor2 := node.NewNode("d2", 2, pubKeyMap, nodeMap)
-	consumer1 := node.NewNode("c1", 3, pubKeyMap, nodeMap)
-	consumer2 := node.NewNode("c2", 3, pubKeyMap, nodeMap)
-	consumer3 := node.NewNode("c3", 3, pubKeyMap, nodeMap)
-	consumer4 := node.NewNode("c4", 3, pubKeyMap, nodeMap)
-	consumer5 := node.NewNode("c5", 3, pubKeyMap, nodeMap)
-	consumer6 := node.NewNode("c6", 3, pubKeyMap, nodeMap)
+	// distributor1 := node.NewNode("d1", 2, pubKeyMap, nodeMap)
+	// distributor2 := node.NewNode("d2", 2, pubKeyMap, nodeMap)
+	// consumer1 := node.NewNode("c1", 3, pubKeyMap, nodeMap)
+	// consumer2 := node.NewNode("c2", 3, pubKeyMap, nodeMap)
+	// consumer3 := node.NewNode("c3", 3, pubKeyMap, nodeMap)
+	// consumer4 := node.NewNode("c4", 3, pubKeyMap, nodeMap)
+	// consumer5 := node.NewNode("c5", 3, pubKeyMap, nodeMap)
+	// consumer6 := node.NewNode("c6", 3, pubKeyMap, nodeMap)
+	node.NewNode("d1", 2, pubKeyMap, nodeMap)
+	node.NewNode("d2", 2, pubKeyMap, nodeMap)
+	node.NewNode("c1", 3, pubKeyMap, nodeMap)
+	node.NewNode("c2", 3, pubKeyMap, nodeMap)
+	node.NewNode("c3", 3, pubKeyMap, nodeMap)
+	node.NewNode("c4", 3, pubKeyMap, nodeMap)
+	node.NewNode("c5", 3, pubKeyMap, nodeMap)
+	node.NewNode("c6", 3, pubKeyMap, nodeMap)
 
 	// Register Stakes
-	manufacturer.RegisterStake(stakes, 20)
-	distributor1.RegisterStake(stakes, 25)
-	distributor2.RegisterStake(stakes, 25)
-	consumer1.RegisterStake(stakes, 15)
-	consumer2.RegisterStake(stakes, 15)
-	consumer3.RegisterStake(stakes, 15)
-	consumer4.RegisterStake(stakes, 15)
-	consumer5.RegisterStake(stakes, 15)
-	consumer6.RegisterStake(stakes, 15)
+	for _, node := range nodeMap {
+		node.RegisterStake(stakes, uint(rand.Int()%30))
+	}
 
 	// Start Voting for Verifier Selection
 	// The voting is random in this implementation
-	manufacturer.AddRandomVote(stakes, votes)
-	distributor1.AddRandomVote(stakes, votes)
-	distributor2.AddRandomVote(stakes, votes)
-	consumer1.AddRandomVote(stakes, votes)
-	consumer2.AddRandomVote(stakes, votes)
-	consumer3.AddRandomVote(stakes, votes)
-	consumer4.AddRandomVote(stakes, votes)
-	consumer5.AddRandomVote(stakes, votes)
-	consumer6.AddRandomVote(stakes, votes)
+	for _, node := range nodeMap {
+		node.AddRandomVote(stakes, votes)
+	}
 
 	logger.LogInfo("Votes are: %+v\n", votes)
 
@@ -80,15 +77,9 @@ func main() {
 		return
 	}
 	// Add transaction to mempool of all the nodes
-	manufacturer.MemPool.AddToPool(createProductTx)
-	distributor1.MemPool.AddToPool(createProductTx)
-	distributor2.MemPool.AddToPool(createProductTx)
-	consumer1.MemPool.AddToPool(createProductTx)
-	consumer2.MemPool.AddToPool(createProductTx)
-	consumer3.MemPool.AddToPool(createProductTx)
-	consumer4.MemPool.AddToPool(createProductTx)
-	consumer5.MemPool.AddToPool(createProductTx)
-	consumer6.MemPool.AddToPool(createProductTx)
+	for _, node := range nodeMap {
+		node.MemPool.AddToPool(createProductTx)
+	}
 
 	// Random Node from the verifiers creates a block
 	block := nodeMap[verifiers[0]].CreateBlock()
@@ -107,13 +98,7 @@ func main() {
 	// In p2p the block is broadcasted to the entire network after the verifiers verify the block
 
 	// Block is added to blockchain by all the nodes
-	manufacturer.AddBlockToChain(block)
-	distributor1.AddBlockToChain(block)
-	distributor2.AddBlockToChain(block)
-	consumer1.AddBlockToChain(block)
-	consumer2.AddBlockToChain(block)
-	consumer3.AddBlockToChain(block)
-	consumer4.AddBlockToChain(block)
-	consumer5.AddBlockToChain(block)
-	consumer6.AddBlockToChain(block)
+	for _, node := range nodeMap {
+		node.AddBlockToChain(block)
+	}
 }

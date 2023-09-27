@@ -34,9 +34,9 @@ func (t *Transaction) Bytes() []byte {
 }
 
 func (t *Transaction) Stringify() string {
-	txJson, _ := json.Marshal(t)
+	txJson, _ := json.MarshalIndent(t, "", "	")
 
-	return string(txJson)
+	return string(txJson) + "\n"
 }
 
 func (t *Transaction) Hash() []byte {
