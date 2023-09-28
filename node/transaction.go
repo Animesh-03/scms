@@ -37,23 +37,44 @@ func (n *Node) GetStatusOfProduct(productId string) (core.TransactionStatus, err
 // Broadcast a transaction with status based on the type of node
 func (n *Node) MakeTransaction(receiver, productId string) (*core.Transaction, error) {
 	var transaction *core.Transaction
+
 	switch n.Type {
 	case Manufacturer:
-		transaction = core.NewTransaction(n.Network.GetHost().ID().String(), receiver, productId, core.Manufactured)
+		status, _ := n.GetStatusOfProduct(productId)
+		if status == 0 {
+			transaction = core.NewTransaction(n.ID, receiver, productId, core.Manufactured)
+		} else {
+			return nil, fmt.Errorf("product %s already exists", productId)
+		}
 
 	case Distribtor:
 		// Check if a previous product is still progress
 		status, _ := n.GetStatusOfProduct(n.CurrentProduct)
-		if n.CurrentProduct == "" || status == core.Received {
-			transaction = core.NewTransaction(n.Network.GetHost().ID().String(), receiver, productId, core.Dispatched)
+		status1, _ := n.GetStatusOfProduct(productId)
+		if status1 == core.Manufactured && (status == core.Received || n.CurrentProduct == "") {
+			transaction = core.NewTransaction(n.ID, receiver, productId, core.Dispatched)
 			n.CurrentProduct = productId
+		} else if status1 != core.Manufactured {
+			return nil, fmt.Errorf("product %s not yet manufactured", productId)
 		} else {
 			return nil, fmt.Errorf("previous product %s still in progress", n.CurrentProduct)
 		}
 
 	case Consumer:
-		transaction = core.NewTransaction(n.Network.GetHost().ID().String(), receiver, productId, core.Received)
+		status, _ := n.GetStatusOfProduct(productId)
+
+		if status == 0 {
+			return nil, fmt.Errorf("product %s not found", productId)
+		}
+
+		if status != core.Dispatched {
+			return nil, fmt.Errorf("product %s not dispatched", productId)
+		}
+
+		transaction = core.NewTransaction(n.ID, receiver, productId, core.Received)
 	}
+
+	n.SignTransaction(transaction)
 
 	transactionBytes, err := json.Marshal(transaction)
 	if err != nil {
@@ -81,7 +102,7 @@ func TransactionHandler(sub *pubsub.Subscription, self peer.ID, node *Node) {
 		if transaction.Verify(node.PubKeyMap[transaction.Sender]) {
 			node.MemPool.AddToPool(&transaction)
 		} else {
-			logger.LogWarn("Transaction Id: %s Invalid", transaction.ID)
+			logger.LogWarn("Transaction Invalid: %s", transaction.Stringify())
 		}
 	}
 }

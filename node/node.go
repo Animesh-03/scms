@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	crand "crypto/rand"
@@ -61,6 +62,7 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 	node.Network = &net
 	node.MemPool = core.NewMemPool()
 	node.Blockchain = make([]core.Block, 0)
+	node.Blockchain = append(node.Blockchain, *core.CreateGenesisBlock())
 	node.Dpos = NewDposClient()
 
 	node.PubKeyMap = make(map[string]ecdsa.PublicKey)
@@ -78,14 +80,14 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 	node.SetupListeners()
 	go node.SetupRPCs(uint(config.ListenPort + 1000))
 
-	// Register the node after a delay
+	// Register the node after a delay (to wait for all the other nodes to initialize)
 	// Stake a random amount of tokens < 30
 	go func() {
 		time.Sleep(10 * time.Second)
 		node.Register(uint(rand.Int()) % 30)
 	}()
 
-	// Vote for a random node after a delay
+	// Vote for a random node after a delay (to wait for all the other nodes to initialize)
 	go func() {
 		time.Sleep(15 * time.Second)
 		node.VoteRandomNode()
@@ -98,6 +100,40 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 		node.Dpos.ComputeVerfiers(2)
 		logger.LogInfo("Final Votes are: %+v\n", node.Dpos.Votes)
 		logger.LogInfo("Verifiers are: %+v\n", node.Dpos.Verifiers)
+
+		for _, v := range node.Dpos.Verifiers {
+			if v == node.ID {
+				// Add verifier listener
+				node.Network.ListenBroadcast("block.verify", func(sub *pubsub.Subscription, self peer.ID) { BlockVerificationHandler(sub, self, node) })
+				break
+			}
+		}
+
+		if node.Dpos.Verifiers[0] == node.ID {
+			// Add blocks
+			logger.LogInfo("This node is selected to create blocks\n")
+
+			go func() {
+				// Create a block every 10 seconds
+				for {
+					time.Sleep(10 * time.Second)
+
+					// Create a block and broadcast it to the verifiers to be verified
+					block := node.CreateBlock()
+					blockBytes, err := json.Marshal(block)
+					if err != nil {
+						logger.LogError("Error marshalling block for broadcast: %+v\n", block.Stringify())
+						continue
+					}
+					node.Network.Broadcast("block.verify", blockBytes)
+				}
+			}()
+
+			// Handle the consensus of the block that is generated above
+			// 1. Add the verification of the block
+			// 2. If all the verifiers approve the block then broadcast the block to all other nodes
+			node.Network.ListenBroadcast("block.verified", func(sub *pubsub.Subscription, self peer.ID) { BlockVerifiedHandler(sub, self, node) })
+		}
 	}()
 
 	// Wait until terminated
@@ -107,21 +143,26 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 	logger.LogInfo("Shutting Down Node...\n")
 }
 
-// Setup the listeners based on the type of node
+// Setup the listeners
 func (node *Node) SetupListeners() {
-	// Role Specific Listeners
-	switch node.Type {
-	case Manufacturer:
-
-	case Distribtor:
-
-	case Consumer:
-
-	}
 	// General Listeners
+
+	// Handle a transaction when broadcasted
+	// 1. Verify the transaction
+	// 2. Add transaction to mempool
 	node.Network.ListenBroadcast("transaction", func(sub *pubsub.Subscription, self peer.ID) { TransactionHandler(sub, self, node) })
+
+	// Handle the registration broadcast by the other nodes
+	// 1. Store the stake of the node
+	// 2. Store the public key of the node
 	node.Network.ListenBroadcast("register", func(sub *pubsub.Subscription, self peer.ID) { RegistrationHandler(sub, self, node) })
+
+	// Handle the vote of a node for DPOS
+	// 1. Add the vote to the node
 	node.Network.ListenBroadcast("vote", func(sub *pubsub.Subscription, self peer.ID) { VotingHandler(sub, self, node) })
+
+	// Handle the addition of a block after it is verified by all the verifiers
+	node.Network.ListenBroadcast("block.add", func(sub *pubsub.Subscription, self peer.ID) { BlockAddHandler(sub, self, node) })
 
 	logger.LogInfo("Listeners Setup Successfully\n")
 }
@@ -140,6 +181,7 @@ func (node *Node) SetupRPCs(port uint) {
 // Sign A Transaction
 func (node *Node) SignTransaction(tx *core.Transaction) {
 	signature, err := ecdsa.SignASN1(crand.Reader, node.PrivKey, tx.Bytes())
+	logger.LogInfo("Tx PubKey: %+v\n", node.PubKey)
 	if err != nil {
 		logger.LogError("Error signing tx: %s\n", err.Error())
 		return
@@ -166,8 +208,9 @@ func (node *Node) AddBlockToBlockChain(block *core.Block) {
 func (node *Node) Register(stakeAmount uint) {
 	logger.LogInfo("Registering self with amount: %d\n", stakeAmount)
 	stake := RegistrationData{
-		PeerId: node.ID,
-		Amount: stakeAmount,
+		PeerId:    node.ID,
+		Amount:    stakeAmount,
+		PublicKey: *node.PubKey,
 	}
 	stakeBytes, err := json.Marshal(stake)
 	if err != nil {
@@ -176,6 +219,23 @@ func (node *Node) Register(stakeAmount uint) {
 	}
 
 	node.Network.Broadcast("register", stakeBytes)
+}
+
+func BlockAddHandler(sub *pubsub.Subscription, self peer.ID, node *Node) {
+	for {
+		msg, err := sub.Next(context.Background())
+		if err != nil {
+			logger.LogError("Error reading from %s\n", sub.Topic())
+			return
+		}
+
+		var block core.Block
+		json.Unmarshal(msg.Data, &block)
+
+		logger.LogInfo("Added block: %+v\n", block.Stringify())
+
+		node.AddBlockToBlockChain(&block)
+	}
 }
 
 func (node *Node) VoteRandomNode() {

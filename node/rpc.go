@@ -21,6 +21,7 @@ func SendTransaction(c *gin.Context, node *Node) {
 		c.IndentedJSON(500, gin.H{
 			"error": err.Error(),
 		})
+		return
 	}
 
 	c.IndentedJSON(200, transaction)
@@ -37,18 +38,18 @@ type ProductStatusData struct {
 func GetProductStatus(c *gin.Context, node *Node) {
 	var productStatus ProductStatusData
 	c.BindJSON(&productStatus)
-	status, err := node.GetStatusOfProduct(productStatus.ProductId)
+	status, _ := node.GetStatusOfProduct(productStatus.ProductId)
 
-	statusString := "Product Not Found"
-	if err != nil {
-		switch status {
-		case core.Manufactured:
-			statusString = "Manufactured"
-		case core.Dispatched:
-			statusString = "Dispatched"
-		case core.Received:
-			statusString = "Delivered"
-		}
+	statusString := ""
+	switch status {
+	case 0:
+		statusString = "Product Not Manufactured"
+	case core.Manufactured:
+		statusString = "Manufactured"
+	case core.Dispatched:
+		statusString = "Dispatched"
+	case core.Received:
+		statusString = "Delivered"
 	}
 
 	img, err := qrcode.Encode(statusString, qrcode.Medium, 512)

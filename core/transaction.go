@@ -3,8 +3,11 @@ package core
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/json"
+
+	"github.com/Animesh-03/scms/logger"
 )
 
 type TransactionStatus uint16
@@ -63,6 +66,10 @@ func (t *Transaction) Verify(pubKey ecdsa.PublicKey) bool {
 	if len(t.ID) == 0 || !bytes.Equal(t.Hash(), t.ID) {
 		return false
 	}
+
+	pubKey.Curve = elliptic.P256()
+
+	logger.LogWarn("PubKey: %+v\n", pubKey)
 
 	if v := ecdsa.VerifyASN1(&pubKey, t.Bytes(), t.Signature); !v {
 		return false

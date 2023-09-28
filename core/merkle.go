@@ -41,6 +41,10 @@ func NewMerkleTree(txHashes [][]byte) *MerkleTree {
 		nodes = append(nodes, node)
 	}
 
+	if len(nodes) == 0 {
+		return &MerkleTree{NewMerkleNode(nil, nil, []byte("0"))}
+	}
+
 	// Make the leaf nodes even by duplicating the last node
 	if len(nodes)%2 == 0 {
 		nodes = append(nodes, nodes[len(nodes)-1])

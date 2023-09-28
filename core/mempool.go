@@ -27,6 +27,7 @@ func (mp *MemPool) AddAllToPool(txs []*Transaction) {
 
 func (mp *MemPool) GetTransactions(count int) (txs []*Transaction) {
 	i := 0
+	txs = make([]*Transaction, 0)
 	for _, tx := range mp.Pool {
 		txs = append(txs, tx)
 		i++
