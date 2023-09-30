@@ -34,6 +34,23 @@ func (n *Node) GetStatusOfProduct(productId string) (core.TransactionStatus, err
 	return core.TransactionStatus(status), nil
 }
 
+func (n *Node) GetTransactionOfProduct(productId string) (*core.Transaction, error) {
+	if productId == "" {
+		return nil, errors.New("product not found")
+	}
+
+	var txn *core.Transaction
+	for _, block := range n.Blockchain {
+		for _, tx := range block.Transactions {
+			if tx.ProductID == productId {
+				txn = tx
+			}
+		}
+	}
+
+	return txn, nil
+}
+
 // Broadcast a transaction with status based on the type of node
 func (n *Node) MakeTransaction(receiver, productId string) (*core.Transaction, error) {
 	var transaction *core.Transaction

@@ -164,6 +164,25 @@ func (node *Node) SetupListeners() {
 	// Handle the addition of a block after it is verified by all the verifiers
 	node.Network.ListenBroadcast("block.add", func(sub *pubsub.Subscription, self peer.ID) { BlockAddHandler(sub, self, node) })
 
+	node.Network.ListenBroadcast("dispute", func(sub *pubsub.Subscription, self peer.ID) {
+		for {
+			msg, err := sub.Next(context.Background())
+			if err != nil {
+				logger.LogError("Error reading from %s\n", sub.Topic())
+				return
+			}
+
+			var nodeID string
+			json.Unmarshal(msg.Data, &nodeID)
+
+			logger.LogWarn("Node Deduct ID: a%sa %s", nodeID, msg.Data)
+
+			node.Dpos.Stakes[string(msg.Data)] -= 10
+
+			logger.LogInfo("Stake deducted from node: %s\n", string(msg.Data))
+		}
+	})
+
 	logger.LogInfo("Listeners Setup Successfully\n")
 }
 
@@ -173,7 +192,8 @@ func (node *Node) SetupRPCs(port uint) {
 
 	router.POST("/transaction", func(ctx *gin.Context) { SendTransaction(ctx, node) })
 	router.GET("/info", func(ctx *gin.Context) { GetNodeInfo(ctx, node) })
-	router.GET("/product_status", func(ctx *gin.Context) { GetProductStatus(ctx, node) })
+	router.POST("/product_status", func(ctx *gin.Context) { GetProductStatus(ctx, node) })
+	router.POST("/dispute", func(ctx *gin.Context) { Dispute(ctx, node) })
 
 	router.Run(fmt.Sprintf("0.0.0.0:%d", port))
 }

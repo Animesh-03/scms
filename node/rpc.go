@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 
 	"github.com/Animesh-03/scms/core"
+	"github.com/Animesh-03/scms/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/skip2/go-qrcode"
 )
@@ -63,4 +64,32 @@ func GetProductStatus(c *gin.Context, node *Node) {
 	c.HTML(200, "qrcode.html", gin.H{
 		"image": imgBytes,
 	})
+}
+
+func Dispute(c *gin.Context, node *Node) {
+	var productStatus ProductStatusData
+	c.BindJSON(&productStatus)
+	status, _ := node.GetStatusOfProduct(productStatus.ProductId)
+
+	if status == 0 {
+		// Product not yet made or sent to distributor
+		c.IndentedJSON(200, gin.H{
+			"error": "product not found",
+		})
+	} else if status == core.Received {
+		// Consumer is wrong, product is dispatched
+		node.Network.Broadcast("dispute", []byte(node.ID))
+		logger.LogInfo("Consumer is wrong, stake is being deducted\n")
+		c.IndentedJSON(200, gin.H{
+			"error": "Consumer is wrong, stake is being deducted",
+		})
+	} else {
+		// Distributor is wrong
+		tx, _ := node.GetTransactionOfProduct(productStatus.ProductId)
+		logger.LogInfo("Distributor is wrong, stake is being deducted\n")
+		node.Network.Broadcast("dispute", []byte(tx.Sender))
+		c.IndentedJSON(200, gin.H{
+			"error": "Distributor is wrong, stake is being deducted",
+		})
+	}
 }
