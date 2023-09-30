@@ -109,6 +109,7 @@ func (node *Node) Start(config *p2p.NetworkConfig) {
 			}
 		}
 
+		// If the node is the top elected node
 		if node.Dpos.Verifiers[0] == node.ID {
 			// Add blocks
 			logger.LogInfo("This node is selected to create blocks\n")
